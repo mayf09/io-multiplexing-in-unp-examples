@@ -10,7 +10,7 @@
 #include <poll.h>
 #include <errno.h>
 
-// #include	<limits.h>		/* for OPEN_MAX */
+#include "echo.h"
 
 #define MAXLINE 1024
 #define OPEN_MAX 16
@@ -18,6 +18,7 @@
 #define LISTENQ 5
 #define INFTIM -1
 
+#define ECHO_DEBUG
 
 int
 main(int argc, char **argv)
@@ -30,7 +31,15 @@ main(int argc, char **argv)
 	struct pollfd		client[OPEN_MAX];
 	struct sockaddr_in	cliaddr, servaddr;
 
+#ifdef ECHO_DEBUG
+	print_poll_macro();
+#endif
+
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
+
+#ifdef ECHO_DEBUG
+	print_fd("listenfd", __LINE__, listenfd);
+#endif
 
 	bzero(&servaddr, sizeof(servaddr));
 	servaddr.sin_family      = AF_INET;
@@ -42,19 +51,30 @@ main(int argc, char **argv)
 	listen(listenfd, LISTENQ);
 
 	client[0].fd = listenfd;
-	client[0].events = POLLRDNORM;
+	client[0].events = POLLIN;
 	for (i = 1; i < OPEN_MAX; i++)
 		client[i].fd = -1;		/* -1 indicates available entry */
 	maxi = 0;					/* max index into client[] array */
 
+#ifdef ECHO_DEBUG
+	print_poll_fds("client", __LINE__, client);
+#endif
 
 	for ( ; ; ) {
 		nready = poll(client, maxi+1, INFTIM);
 
-		if (client[0].revents & POLLRDNORM) {	/* new client connection */
+#ifdef ECHO_DEBUG
+		print_poll_fds("client", __LINE__, client);
+#endif
+
+		if (client[0].revents & POLLIN) {	/* new client connection */
 			clilen = sizeof(cliaddr);
 			connfd = accept(listenfd, (struct sockaddr *) &cliaddr, &clilen);
-#ifdef	NOTDEF
+
+#ifdef ECHO_DEBUG
+			print_fd("connfd", __LINE__, connfd);
+#endif
+#ifdef NOTDEF
 			printf("new client: %s\n", Sock_ntop((SA *) &cliaddr, clilen));
 #endif
 
@@ -66,7 +86,12 @@ main(int argc, char **argv)
 			if (i == OPEN_MAX)
 				perror("too many clients");
 
-			client[i].events = POLLRDNORM;
+			client[i].events = POLLIN;
+
+#ifdef ECHO_DEBUG
+			print_poll_fds("client", __LINE__, client);
+#endif
+
 			if (i > maxi)
 				maxi = i;				/* max index in client[] array */
 
@@ -77,7 +102,7 @@ main(int argc, char **argv)
 		for (i = 1; i <= maxi; i++) {	/* check all clients for data */
 			if ( (sockfd = client[i].fd) < 0)
 				continue;
-			if (client[i].revents & (POLLRDNORM | POLLERR)) {
+			if (client[i].revents & (POLLIN | POLLERR)) {
 				if ( (n = read(sockfd, buf, MAXLINE)) < 0) {
 					if (errno == ECONNRESET) {
 							/*4connection reset by client */
@@ -95,6 +120,10 @@ main(int argc, char **argv)
 #endif
 					close(sockfd);
 					client[i].fd = -1;
+
+#ifdef ECHO_DEBUG
+					print_poll_fds("after close", __LINE__, client);
+#endif
 				} else
 					write(sockfd, buf, n);
 
